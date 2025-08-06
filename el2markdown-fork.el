@@ -138,10 +138,24 @@
 
 ;;; Code:
 
+;; test (beginning)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;                                  variables                                 ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 ;; The `{{{' and `}}}' and sequences are used by the package
 ;; `folding.el'.
 (defvar el2markdown-empty-comment "^;;+ *\\(\\({{{\\|}}}\\).*\\)?$"
   "Regexp of lines that should be considered empty.")
+
+
+(defvar el2markdown-cob-regexp "^;;;+\n;; *\\S-+ *;+\n;;;+"
+  "Regexp of comment block.")
+
+
+(defvar el2markdown-cob-capture-regexp "^;;;+\n;; *\\(.*?\\) *;+\n;;;+"
+  "Regexp of comment block.")
 
 
 (defvar el2markdown-translate-keys-within-markdown-quotes nil
@@ -163,6 +177,9 @@ The functions in the hook should accept one argument, the output
 stream (typically the destination buffer).  When the hook is run
 current buffer is the source buffer.")
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;                                  functions                                 ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;;###autoload
 (defun el2markdown-view-buffer ()
@@ -209,7 +226,7 @@ current buffer is the source buffer.")
   (el2markdown-write-file "README.md" noninteractive))
 
 
-(defun el2markdown-convert ()
+(defun el2markdown-convert (&optional include-end)
   "Print commentart section of current buffer as MarkDown.
 
 After conversion, `el2markdown-post-convert-hook' is called.  The
@@ -223,20 +240,33 @@ current buffer is the source buffer."
     (el2markdown-skip-to-commentary)
     (while
         (el2markdown-convert-section))
+
+    (el2markdown-emit-header 1 "Code")
+    (forward-line)
+
+    (while
+        (el2markdown-convert-code))
     (terpri)
+
+    (terpri)
+
     (princ "---")
     (terpri)
-    (let ((file-name (buffer-file-name))
-          (from ""))
-      (if file-name
-          (setq from (concat " from `"
-                             (file-name-nondirectory file-name)
-                             "`")))
-      (princ (concat
-              "Converted" from
-              " by "
-              "[*el2markdown*](https://github.com/Lindydancer/el2markdown)."))
-      (terpri))
+    (terpri)
+    (princ "*Last updated: { git_revision_date_localized }*")
+    (terpri)
+    (when include-end
+      (let ((file-name (buffer-file-name))
+            (from ""))
+        (if file-name
+            (setq from (concat " from `"
+                               (file-name-nondirectory file-name)
+                               "`")))
+        (princ (concat
+                "Converted" from
+                " by "
+                "[*el2markdown*](https://github.com/Lindydancer/el2markdown)."))
+        (terpri)))
     (run-hook-with-args 'el2markdown-post-convert-hook standard-output)))
 
 
@@ -327,6 +357,50 @@ current buffer is the source buffer."
       (not (eq p (point))))))
 
 
+(defun el2markdown-convert-code ()
+  (if (eobp)
+      nil
+    (if (el2markdown-emit-till-next-cob)
+        ;; we should now be at the beginning of a cob
+        (el2markdown-emit-cob)
+      ;; no cob matched, so no more cobs.
+      (el2markdown-emit-till-end-of-buffer)
+      nil)))
+
+
+(defun el2markdown-emit-till-next-cob ()
+  (let ((start (point)))
+    (when (re-search-forward "^;;;+$" nil t)
+      (beginning-of-line)
+      ;; verify it's a comment block
+      (when (looking-at el2markdown-cob-regexp)
+        (princ "```emacs-lisp")
+        (terpri)
+        (princ (buffer-substring-no-properties start (point)))
+        (princ "```")
+        (terpri)
+        (terpri)))))
+
+
+(defun el2markdown-emit-till-end-of-buffer ()
+  (princ "```emacs-lisp")
+  (terpri)
+  (princ (buffer-substring-no-properties (point) (point-max)))
+  (terpri)
+  (princ "```")
+  (terpri)
+  (goto-char (point-max)))
+
+
+(defun el2markdown-emit-cob ()
+  (when (looking-at el2markdown-cob-capture-regexp)
+    (let ((title (match-string 1)))
+      (forward-line 3)               ; Move past the comment block into the body
+      (el2markdown-emit-header 2 title)
+      ;; (terpri)
+      )))
+
+
 (defun el2markdown-emit-header (count title)
   (princ (make-string count ?#))
   (princ " ")
@@ -395,6 +469,10 @@ current buffer is the source buffer."
               nil
             (terpri))))
       (setq first nil))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;                                     end                                    ;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (provide 'el2markdown-fork)
 
