@@ -150,11 +150,7 @@
   "Regexp of lines that should be considered empty.")
 
 
-(defvar el2markdown-cob-regexp "^;;;+\n;; *\\S-+ *;+\n;;;+"
-  "Regexp of comment block.")
-
-
-(defvar el2markdown-cob-capture-regexp "^;;;+\n;; *\\(.*?\\) *;+\n;;;+"
+(defvar el2markdown-cob-regexp ";;;+\n;; *\\(.*?\\) *;+\n;;;+"
   "Regexp of comment block.")
 
 
@@ -241,6 +237,7 @@ current buffer is the source buffer."
     (while
         (el2markdown-convert-section))
 
+    ;; TODO: move this code thing into -convert-code
     (el2markdown-emit-header 1 "Code")
     (forward-line)
 
@@ -393,7 +390,7 @@ current buffer is the source buffer."
 
 
 (defun el2markdown-emit-cob ()
-  (when (looking-at el2markdown-cob-capture-regexp)
+  (when (looking-at el2markdown-cob-regexp)
     (let ((title (match-string 1)))
       (forward-line 3)               ; Move past the comment block into the body
       (el2markdown-emit-header 2 title)
