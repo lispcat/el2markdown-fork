@@ -1,4 +1,4 @@
-;;; el2markdown.el --- Convert commentary of elisp files to markdown. -*- lexical-binding: t; -*-
+;;; el2markdown-fork.el --- Convert commentary of elisp files to markdown. -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2013-2017,2025 Anders Lindgren
 
@@ -396,6 +396,6 @@ current buffer is the source buffer."
             (terpri))))
       (setq first nil))))
 
-(provide 'el2markdown)
+(provide 'el2markdown-fork)
 
-;;; el2markdown.el ends here
+;;; el2markdown-fork.el ends here
