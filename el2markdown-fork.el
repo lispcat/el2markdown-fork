@@ -250,7 +250,7 @@ current buffer is the source buffer."
         (el2markdown-convert-section))
 
     ;; TODO: move this code thing into -convert-code
-    (el2markdown-emit-header 1 "Code")
+    ;; (el2markdown-emit-header 1 "Code")
     (forward-line)
 
     (el2markdown-convert-code)
@@ -324,7 +324,8 @@ current buffer is the source buffer."
           (title        (match-string-no-properties 2)))
       (when (string-match " *-\\*-.*-\\*-" title)
         (setq title (replace-match "" nil nil title)))
-      (el2markdown-emit-header 1 (concat package-name " - " title))
+      (el2markdown-emit-header 1 (concat package-name " - " title)
+                               "λ ")
       (forward-line))))
 
 
@@ -579,7 +580,7 @@ current buffer is the source buffer."
   (when (looking-at el2markdown-cob-regexp)
     (let ((title (match-string 1)))
       (forward-line 3)               ; Move past the comment block into the body
-      (el2markdown-emit-header 2 title)
+      (el2markdown-emit-header 1 title "> ")
       ;; (terpri)
       )))
 
@@ -587,14 +588,19 @@ current buffer is the source buffer."
   (when (looking-at el2markdown-coh-regexp)
     (let ((title (match-string 1)))
       (forward-line 1)               ; Move past the comment block into the body
-      (el2markdown-emit-header 3 title)
+      (el2markdown-emit-header 2 title "‣ ")
       ;; (terpri)
       )))
 
+;; "○ "
+;; "‣ "
 
-(defun el2markdown-emit-header (count title)
+
+(defun el2markdown-emit-header (count title &optional prefix postfix)
   (princ (make-string count ?#))
   (princ " ")
+  (when prefix
+    (princ prefix))
   ;; Strip trailing ".".
   (let ((len nil))
     (while (progn
@@ -603,6 +609,8 @@ current buffer is the source buffer."
                   (eq (elt title (- len 1)) ?.)))
       (setq title (substring title 0 (- len 1)))))
   (princ (el2markdown-translate-string title))
+  (when postfix
+    (princ postfix))
   (terpri)
   (terpri))
 
