@@ -138,7 +138,9 @@
 
 ;;; Code:
 
-;; test (beginning)
+;;; -- start ------------------------------------------------------------------
+
+(require 'dash)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;                                  variables                                 ;
@@ -152,6 +154,14 @@
 
 (defvar el2markdown-cob-regexp ";;;+\n;; *\\(.*?\\) *;+\n;;;+"
   "Regexp of comment block.")
+
+
+(defvar el2markdown-coh-regexp "^;;; -- \\(.*\\) -+$"
+  "Regexp of comment header.")
+
+
+(defvar el2markdown-cow-regexp "^;; --$"
+  "Regexp of comment-wrap")
 
 
 (defvar el2markdown-translate-keys-within-markdown-quotes nil
@@ -176,6 +186,8 @@ current buffer is the source buffer.")
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;                                  functions                                 ;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;; -- comment ----------------------------------------------------------------
 
 ;;;###autoload
 (defun el2markdown-view-buffer ()
@@ -241,8 +253,7 @@ current buffer is the source buffer."
     (el2markdown-emit-header 1 "Code")
     (forward-line)
 
-    (while
-        (el2markdown-convert-code))
+    (el2markdown-convert-code)
     (terpri)
 
     (terpri)
@@ -343,6 +354,7 @@ current buffer is the source buffer."
       (forward-line)))
 
 
+
 (defun el2markdown-convert-section ()
   (el2markdown-skip-empty-lines)
   (el2markdown-skip-license)
@@ -354,16 +366,190 @@ current buffer is the source buffer."
       (not (eq p (point))))))
 
 
+;;; Code parsing logic:
+
+;; - emit code till next cob or coh or cow
+
+;; - iff at cob:
+;;   - if has cow before next cob or coh:
+;;     - emit text till cow
+;;       emit cow
+;;       emit text till next cob or coh
+;;   - else:
+;;     - emit code till next cob or coh
+;; - iff at coh:
+;;   - if has cow before next cob or coh:
+;;     - emit text till cow
+;;       emit cow
+;;       emit text till next cob or coh
+;;   - else:
+;;     - emit code till next cob or coh
+;; - iff at cow:
+;;   - emit code till next cow (capture whole cow)
+;;     emit text till next cob or coh
+
+;;
+
+;;; -- new stuff start --------------------------------------------------------
+
+;; --
+
+;; DONE
+(defun el2markdown-handle-cob-or-coh-body ()
+  ;; is there no cow in this body?
+  (if (not (eq 'cow
+               (cdr-safe
+                (el2markdown-get-till-next '(cob coh cow)))))
+      ;; there is no cow in this body, so all is code
+      (el2markdown-emit-till-next '(cob coh) 'code)
+    ;; there /is/ a cow in this body
+    (el2markdown-handle-cow-body)))
+
+;; DONE
+(defun el2markdown-handle-cow-body ()
+  (and
+   ;; emit text till cow
+   (el2markdown-emit-till-next '(cow) 'text)
+   (forward-line)
+   ;; does this cow have a closing cow?
+   (if (eq 'cow
+           (cdr-safe
+            (el2markdown-get-till-next '(cob coh cow))))
+       ;; yes, it does
+       (progn
+         (and
+          ;; finish cow
+          (el2markdown-emit-till-next '(cow) 'code)
+          (forward-line 1)
+          ;; rest as text if necessary
+          (el2markdown-emit-till-next '(cob coh) 'text)))
+     ;; no, it doesn't have a closing cow
+     (el2markdown-emit-till-next '(cob coh) 'code))))
+
+;; TODO
 (defun el2markdown-convert-code ()
   (if (eobp)
       nil
-    (if (el2markdown-emit-till-next-cob)
-        ;; we should now be at the beginning of a cob
-        (el2markdown-emit-cob)
-      ;; no cob matched, so no more cobs.
-      (el2markdown-emit-till-end-of-buffer)
-      nil)))
+    ;; start
+    (when-let* ((c-type
+                 (el2markdown-emit-till-next '(cob coh cow) 'code)))
+      ;; rest, main loop
+      (while
+          (if (eobp)
+              nil
+            ;; conditional
+            (pcase c-type
+              ('cob
+               (el2markdown-emit-cob)
+               (setq c-type (el2markdown-handle-cob-or-coh-body)))
+              ('coh
+               (el2markdown-emit-coh)
+               (setq c-type (el2markdown-handle-cob-or-coh-body)))
+              ('cow
+               (setq c-type (el2markdown-handle-cow-body)))
+              (_ (error "Invalid c-type: %s" c-type))))))))
 
+(defun el2markdown-emit-till-next (till-any emit-type)
+  (when-let* ((pair (el2markdown-get-till-next till-any))
+              (till (car pair))
+              (c-type (cdr pair)))
+    (and (el2markdown-emit-till-point till emit-type)
+         c-type)))
+
+(defun el2markdown-get-till-next (till-any)
+  ;; check for errors
+  (unless (and (listp till-any)
+               (-every? (lambda (e) (-contains? '(cob coh cow) e)) till-any))
+    (error "Expected list of any '(cob coh cow): %S" till-any))
+  ;; main
+  (let* ((start (point))
+         (_ (message "DEBUG: start: %s" start))
+         (next-cob-dist
+          (when (-contains? till-any 'cob)
+            (save-excursion
+              (when (re-search-forward el2markdown-cob-regexp nil t)
+                (let ((new-point
+                       (match-beginning 0)))
+                  (when (>= new-point start)
+                    new-point))))))
+         (_ (message "DEBUG: next-cob-dist: %s" next-cob-dist))
+         (next-coh-dist
+          (when (-contains? till-any 'coh)
+            (save-excursion
+              (re-search-forward el2markdown-coh-regexp nil t))))
+         (_ (message "DEBUG: next-coh-dist: %s" next-coh-dist))
+         (next-cow-dist
+          (when (-contains? till-any 'cow)
+            (save-excursion
+              (re-search-forward el2markdown-cow-regexp nil t))))
+         (_ (message "DEBUG: next-cow-dist: %s" next-cow-dist))
+         (values-lst `(,next-cob-dist ,next-coh-dist ,next-cow-dist)))
+    (if (-every? #'null values-lst)
+        (cons (point-max) 'max)
+      (if-let*
+          ((_ (message "DEBUG: values: %s" values-lst))
+           (vars-lst '(cob coh cow))
+           ;; order doesn't matter
+           (smallest-value
+            (-some-> values-lst
+              (-non-nil)
+              (-min)))
+           (_ (message "DEBUG: smallest-value: %s" smallest-value))
+           ;; retrieve key with value
+           (smallest-var
+            (nth (--find-index (and it (= smallest-value it))
+                               values-lst)
+                 vars-lst))
+           (_ (message "DEBUG: 2: %s" smallest-var))
+           (result (cons smallest-value smallest-var)))
+          ;; do if true
+          (progn
+            (message "closest-dist: %s" result)
+            result)
+        ;; do if else
+        (progn
+          (message "no matches")
+          nil)))))
+
+(defun el2markdown-emit-till-point (till-point emit-type)
+  (unless (and (symbolp emit-type)
+               (-contains? '(code text) emit-type))
+    (error "Expected symbol of one of '(code text): %S" emit-type))
+  (let ((start (point)))
+    ;; fix till-point to be beginning of line
+    (setq till-point
+          (save-excursion
+            (goto-char till-point)
+            (beginning-of-line)
+            (point)))
+    (if (not (> (- till-point start) 1))
+        (forward-line)
+        t
+      (pcase emit-type
+        ('code (goto-char till-point)
+               (let ((main-text (buffer-substring-no-properties start (point))))
+                 (unless (string-blank-p main-text)
+                   ;; begin printing
+                   (princ "```emacs-lisp")
+                   (terpri)
+                   (princ  main-text)
+                   (princ "```")
+                   (terpri)
+                   (terpri)))
+               t)
+        ('text (beginning-of-line)
+               (when (< (point) till-point)
+                 (el2markdown-emit-rest-of-comment)
+                 (while (< (point) till-point)
+                   (forward-line)
+                   (el2markdown-emit-rest-of-comment))
+                 (forward-line 1))
+               t)
+        (_ (error "no matching emit type" emit-type))))))
+
+;; --
+
+;;; -- new stuff end ----------------------------------------------------------
 
 (defun el2markdown-emit-till-next-cob ()
   (let ((start (point)))
@@ -397,6 +583,14 @@ current buffer is the source buffer."
       ;; (terpri)
       )))
 
+(defun el2markdown-emit-coh ()
+  (when (looking-at el2markdown-coh-regexp)
+    (let ((title (match-string 1)))
+      (forward-line 1)               ; Move past the comment block into the body
+      (el2markdown-emit-header 3 title)
+      ;; (terpri)
+      )))
+
 
 (defun el2markdown-emit-header (count title)
   (princ (make-string count ?#))
@@ -423,7 +617,8 @@ current buffer is the source buffer."
 
 (defun el2markdown-emit-rest-of-comment ()
   (let ((first t))
-    (while (looking-at "^;;")
+    (while (and (looking-at "^;;")
+                (not (looking-at "^;; --$")))
       ;; Skip empty lines.
       (while (looking-at el2markdown-empty-comment)
         (forward-line))
