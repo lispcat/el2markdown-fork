@@ -160,7 +160,7 @@
   "Regexp of comment header.")
 
 
-(defvar el2markdown-cow-regexp "^;; --$"
+(defvar el2markdown-cow-regexp "^;;;? --?$"
   "Regexp of comment-wrap")
 
 
@@ -261,7 +261,10 @@ current buffer is the source buffer."
     (princ "---")
     (terpri)
     (terpri)
-    (princ "*Last updated: { git_revision_date_localized }*")
+    (princ
+     (format "*Last updated: %s*"
+             (format-time-string "%B %e, %Y"
+                                 (current-time))))
     (terpri)
     (when include-end
       (let ((file-name (buffer-file-name))
@@ -580,7 +583,7 @@ current buffer is the source buffer."
   (when (looking-at el2markdown-cob-regexp)
     (let ((title (match-string 1)))
       (forward-line 3)               ; Move past the comment block into the body
-      (el2markdown-emit-header 1 title "> ")
+      (el2markdown-emit-header 1 title "% ")
       ;; (terpri)
       )))
 
@@ -588,12 +591,17 @@ current buffer is the source buffer."
   (when (looking-at el2markdown-coh-regexp)
     (let ((title (match-string 1)))
       (forward-line 1)               ; Move past the comment block into the body
-      (el2markdown-emit-header 2 title "‣ ")
+      (el2markdown-emit-header 2 title "> ")
       ;; (terpri)
       )))
 
+;; "⋮ "
+;; "⋯ "
+;; "↳ "
+;; "λ "
 ;; "○ "
 ;; "‣ "
+;;; "⊢ "
 
 
 (defun el2markdown-emit-header (count title &optional prefix postfix)
